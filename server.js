@@ -68,7 +68,6 @@ wss.on('connection', (ws) => {
                 }
                 break;
 
-            // This is a data message from an already-approved hardware 
             case 'sensor_data':
                 if (clientInfo.status === 'approved') {
                     console.log(`Received sensor data from '${clientInfo.deviceId}':`, data.payload);
@@ -99,6 +98,6 @@ wss.on('connection', (ws) => {
     });
 });
 
-server.listen(port, () => {
+server.listen(port, '0.0.0.0', () => {
     console.log(`✅ Server is running on http://localhost:${port}`);
 });
