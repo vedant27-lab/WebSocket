@@ -1,56 +1,104 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-
+const path = require('path');
+const { v4: uuidv4 } = require('uuid'); 
 const app = express();
 const port = process.env.PORT || 8765;
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-app.get('/', (req, res) => {
-  res.send('WebSocket server is running. Connect on ws://...');
-});
+const clients = new Map();
+
+function broadcastToFrontends(message) {
+    clients.forEach((client, connection) => {
+        if (client.type === 'frontend' && connection.readyState === WebSocket.OPEN) {
+            connection.send(JSON.stringify(message));
+        }
+    });
+}
 
 wss.on('connection', (ws) => {
-  console.log(`🔌 New device connected.`);
-  console.log(`Total connected devices: ${wss.clients.size}`);
+    const clientId = uuidv4();
+    clients.set(ws, { id: clientId });
+    console.log(`🔌 New client connected with ID: ${clientId}`);
 
-  ws.on('message', (message) => {
-    console.log(`\nReceived message: ${message}`);
+    ws.on('message', (message) => {
+        const messageString = message.toString();
+        const data = JSON.parse(messageString);
 
-    const messageString = message.toString();
-    let response;
+        const clientInfo = clients.get(ws);
 
-    try {
-      const data = JSON.parse(messageString);
-      console.log(`  Decoded JSON:`, data);
-      
-      if (data.sensor === 'temperature') {
-        const temp = data.value;
-        console.log(`  Processing temperature: ${temp}°C`);
-      }
+        switch (data.type) {
+            case 'hardware_connect':
+                clientInfo.type = 'hardware';
+                clientInfo.deviceId = data.deviceId;
+                clientInfo.status = 'pending_approval';
+                console.log(`Hardware device '${data.deviceId}' registered, awaiting approval.`);
+                
+                broadcastToFrontends({
+                    type: 'device_pending',
+                    deviceId: data.deviceId
+                });
+                break;
+            
+            case 'device_approval':
+                const deviceIdToUpdate = data.deviceId;
+                let hardwareSocket = null;
 
-      response = { status: 'received', data: data };
-    } catch (error) {
-      console.log('  Message is not valid JSON. Treating as plain text.');
-      response = { status: 'received_text', original_message: messageString };
-    }
-    
-    ws.send(JSON.stringify(response));
-    console.log(`  Sent response: ${JSON.stringify(response)}`);
-  });
+                clients.forEach((client, connection) => {
+                    if (client.deviceId === deviceIdToUpdate) {
+                        hardwareSocket = connection;
+                    }
+                });
 
-  ws.on('close', () => {
-    console.log('Device disconnected.');
-    console.log(`Total connected devices: ${wss.clients.size}`);
-  });
+                if (hardwareSocket && data.action === 'accept') {
+                    const hardwareClientInfo = clients.get(hardwareSocket);
+                    hardwareClientInfo.status = 'approved';
+                    
+                    hardwareSocket.send(JSON.stringify({ type: 'command', command: 'start_sending_data' }));
+                    console.log(`Device '${deviceIdToUpdate}' approved. Sent start command.`);
+                    
+                    broadcastToFrontends({ type: 'device_approved', deviceId: deviceIdToUpdate });
+                } else {
+                    console.log(`Approval for '${deviceIdToUpdate}' processed as '${data.action}'.`);
+                }
+                break;
 
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-  });
+            // This is a data message from an already-approved hardware 
+            case 'sensor_data':
+                if (clientInfo.status === 'approved') {
+                    console.log(`Received sensor data from '${clientInfo.deviceId}':`, data.payload);
+                    broadcastToFrontends({
+                        type: 'sensor_data',
+                        deviceId: clientInfo.deviceId,
+                        payload: data.payload
+                    });
+                }
+                break;
+            
+            case 'frontend_connect':
+                clientInfo.type = 'frontend';
+                console.log(`Frontend client '${clientId}' connected.`);
+                break;
+        }
+    });
+
+    ws.on('close', () => {
+        const clientInfo = clients.get(ws);
+        if (clientInfo && clientInfo.type === 'hardware') {
+            console.log(`Hardware '${clientInfo.deviceId}' disconnected.`);
+            broadcastToFrontends({ type: 'device_disconnected', deviceId: clientInfo.deviceId });
+        } else {
+            console.log(`Client '${clientId}' disconnected.`);
+        }
+        clients.delete(ws);
+    });
 });
 
 server.listen(port, () => {
-  console.log(`✅ WebSocket server started on ws://localhost:${port}`);
+    console.log(`✅ Server is running on http://localhost:${port}`);
 });
