@@ -72,9 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.onopen = () =>{
         statusDiv.innerText = 'Connected';
-        statusDiv.style.backgroundColor = '#d4edda'
-        sendToServer({type:'fronend_connect'})
-    }
+        statusDiv.style.backgroundColor = '#d4edda';
+        sendToServer({type:'fronend_connect'});
+    };
 
     socket.onclose = () => {
         statusDiv.innerText = 'Disconnected';
