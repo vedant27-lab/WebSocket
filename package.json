@@ -2,8 +2,9 @@
   "name": "websocket",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -14,5 +15,8 @@
     "express": "^5.1.0",
     "http": "^0.0.1-security",
     "ws": "^8.18.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
